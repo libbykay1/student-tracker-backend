@@ -45,6 +45,21 @@ app.post("/students/:slug", async (req, res) => {
 
   res.json({ success: true });
 });
+
+// GET all students (name + slug)
+app.get("/students", async (req, res) => {
+  try {
+    const students = await studentsCollection
+      .find({}, { projection: { _id: 0, name: 1, slug: 1 } })
+      .toArray();
+
+    res.json(students);
+  } catch (err) {
+    console.error("Failed to fetch students:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // One-time route to import active students
 app.post("/import-active-students", async (req, res) => {
   const studentNames = `
