@@ -45,3 +45,105 @@ app.post("/students/:slug", async (req, res) => {
 
   res.json({ success: true });
 });
+// One-time route to import active students
+app.post("/import-active-students", async (req, res) => {
+  const studentNames = `
+Gabriel Pettis
+Gia Hajela
+Graham Reyne
+Jace Revenaugh
+Joshua Li
+Rayan Ardestani
+Ryan Gilani
+Tristan Downey
+Ved Hajela
+Vivaan Sivakumar
+Wesley McCracken
+Artemis Henderson
+Khoi Tran
+Luca Ransdell
+Trent Howarth
+Mack Ho-Choi
+David Silva
+Caleb Kucera
+Ellen Chen
+Hannah Chen
+Mia Mukherji
+Paz Glaser
+Max Mrynskyi
+Mukund Shankar
+Dylan Rose
+Lukas Reich
+Isla Maani
+Iddo Vonshak
+Deris Tas
+Oliver Liao
+Asher Luna
+Katie Bella Gonzalez
+Ezra Margolis
+Rithi Srikannan
+Manny McChesney
+Anna Kysenko
+Andrew Heintz
+Walter Magnuson Jr.
+Keanu Winslade
+Grayson Manalo
+Andrew Stapleton
+Michael Pattinson
+Lucas Orozco
+Hunter Renshaw
+Kaeden Chan
+Lincoln Melkoumian
+Blake Busa
+Kaitlyn King
+Vedika Raman
+Dylan Rohm
+Arjun Rawat
+Caleb Liu
+Mir Tiwari
+Alex Herz
+Ren Dhanasarnsombat
+Ran Dhanasarnsombat
+Rohan Musunuri
+Vlad Garmash
+Ronish Adhikary
+Jaron Bernstein
+Kayla Bernstein
+Julia Aung
+Stas Guliaev
+Adrian Tang
+Masen Boston
+Christophe Ervin
+Silas Nay
+Will Templeton
+Lucho Caballero
+Maya Caballero
+Arrietty Akane Fukuto
+Ethan Xu
+Joe Cruz
+Taylor Lee
+Jadyn Lee
+Tomas Araiza
+Roshan Raju
+  `.trim().split('\n').map(name => name.trim());
+
+  // Deduplicate just in case
+  const uniqueNames = [...new Set(studentNames)];
+
+  const studentDocs = uniqueNames.map(name => {
+    const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    return { name, slug, progress: {} };
+  });
+
+  try {
+    const result = await studentsCollection.insertMany(studentDocs, { ordered: false });
+    res.json({ insertedCount: result.insertedCount });
+  } catch (err) {
+    if (err.code === 11000) {
+      res.status(409).json({ error: "Some duplicates skipped", message: err.message });
+    } else {
+      console.error(err);
+      res.status(500).json({ error: "Bulk insert failed", message: err.message });
+    }
+  }
+});
