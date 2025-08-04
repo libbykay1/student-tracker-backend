@@ -63,7 +63,7 @@ app.get("/students", async (req, res) => {
 // One-time route to import active students
 app.post("/import-active-students", async (req, res) => {
   const studentNames = `
-
+Milo French-Parks
   `.trim().split('\n').map(name => name.trim());
 
   // Deduplicate just in case
@@ -83,6 +83,27 @@ app.post("/import-active-students", async (req, res) => {
     } else {
       console.error(err);
       res.status(500).json({ error: "Bulk insert failed", message: err.message });
+    }
+  }
+});
+// POST /students - add a new student by name
+app.post("/students", async (req, res) => {
+  const { name } = req.body;
+  if (!name || typeof name !== "string") {
+    return res.status(400).json({ error: "Invalid name" });
+  }
+
+  const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+  try {
+    const result = await studentsCollection.insertOne({ name, slug, progress: {} });
+    res.status(201).json({ success: true, slug });
+  } catch (err) {
+    if (err.code === 11000) {
+      res.status(409).json({ error: "Student already exists" });
+    } else {
+      console.error("Failed to add student:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
   }
 });
