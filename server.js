@@ -7,7 +7,30 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT;
 
-app.use(cors());
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://tcssbtracker.netlify.app",   // your site
+  // add any other admin domains
+];
+
+const corsOptions = {
+  origin(origin, cb) {
+    // Allow non-browser tools (no origin) and anything in the list
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  // If you use cookies/session, also set credentials: true and specific origin
+  credentials: false,
+  optionsSuccessStatus: 204,
+};
+
+// 🔹 must be before routes
+app.use(cors(corsOptions));
+// 🔹 ensure preflight works for all routes
+app.options("*", cors(corsOptions));
 app.use(bodyParser.json({ limit: "25mb" }));
 
 const MONGO_URI = process.env.MONGO_URI;
