@@ -14,6 +14,13 @@ const MONGO_URI = process.env.MONGO_URI;
 const client = new MongoClient(MONGO_URI);
 let studentsCollection;
 
+function slugify(name = "") {
+  return String(name)
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "");
+}
+
 async function start() {
   await client.connect();
   const db = client.db("student_tracker");
@@ -109,6 +116,44 @@ app.post("/students", async (req, res) => {
     }
   }
 });
+
+app.put("/students/:slug", async (req, res) => {
+  const oldSlug = req.params.slug;
+  const { name } = req.body || {};
+  if (!name || typeof name !== "string") {
+    return res.status(400).json({ error: "Invalid name" });
+  }
+  const newSlug = slugify(name);
+
+  try {
+    const result = await studentsCollection.findOneAndUpdate(
+      { slug: oldSlug },
+      { $set: { name, slug: newSlug } },
+      { returnDocument: "after" }
+    );
+    if (!result.value) return res.status(404).json({ error: "Student not found" });
+    res.json({ success: true, slug: newSlug });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({ error: "Another student already uses that name/slug" });
+    }
+    console.error("Rename failed:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// DELETE /students/:slug
+app.delete("/students/:slug", async (req, res) => {
+  try {
+    const r = await studentsCollection.deleteOne({ slug: req.params.slug });
+    if (r.deletedCount === 0) return res.status(404).json({ error: "Student not found" });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete failed:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 
 // GET /backup/students - stream all students as a downloadable JSON file (array)
 // Strips _id so the file can be re-imported without clashes.
