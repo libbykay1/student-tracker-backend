@@ -2,12 +2,13 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const { MongoClient } = require("mongodb");
+const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT;
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: "25mb" }));
 
 const MONGO_URI = process.env.MONGO_URI;
 const client = new MongoClient(MONGO_URI);
@@ -17,6 +18,7 @@ async function start() {
   await client.connect();
   const db = client.db("student_tracker");
   studentsCollection = db.collection("students");
+  await studentsCollection.createIndex({ slug: 1 }, { unique: true });
 
   app.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);
@@ -63,7 +65,7 @@ app.get("/students", async (req, res) => {
 // One-time route to import active students
 app.post("/import-active-students", async (req, res) => {
   const studentNames = `
-Milo French-Parks
+
   `.trim().split('\n').map(name => name.trim());
 
   // Deduplicate just in case
@@ -105,5 +107,82 @@ app.post("/students", async (req, res) => {
       console.error("Failed to add student:", err);
       res.status(500).json({ error: "Internal server error" });
     }
+  }
+});
+
+// GET /backup/students - stream all students as a downloadable JSON file (array)
+// Strips _id so the file can be re-imported without clashes.
+app.get("/backup/students", async (req, res) => {
+  try {
+    const iso = new Date().toISOString().replace(/[:.]/g, "-");
+    const filename = `students-backup-${iso}.json`;
+
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    // Start JSON array
+    res.write("[");
+
+    const cursor = studentsCollection.find({}, { projection: { _id: 0 } });
+    let first = true;
+
+    for await (const doc of cursor) {
+      if (!first) res.write(",");
+      else first = false;
+      res.write(JSON.stringify(doc));
+    }
+
+    // End JSON array
+    res.write("]");
+    res.end();
+  } catch (err) {
+    console.error("Backup failed:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Backup failed" });
+    } else {
+      res.end();
+    }
+  }
+});
+
+// POST /restore/students - body should be an array of { name, slug, progress }
+app.post("/restore/students", async (req, res) => {
+  try {
+    const payload = req.body;
+
+    if (!Array.isArray(payload)) {
+      return res.status(400).json({ error: "Body must be an array of student docs" });
+    }
+
+    // Normalize and sanitize incoming docs; ignore any _id
+    const ops = payload
+      .filter(d => d && typeof d.slug === "string" && d.slug.trim())
+      .map(d => {
+        const name = typeof d.name === "string" ? d.name : "";
+        const slug = d.slug.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+        const progress = (d.progress && typeof d.progress === "object") ? d.progress : {};
+        return {
+          updateOne: {
+            filter: { slug },
+            update: { $set: { name, slug, progress } },
+            upsert: true,
+          }
+        };
+      });
+
+    if (ops.length === 0) {
+      return res.status(400).json({ error: "No valid docs to restore" });
+    }
+
+    const result = await studentsCollection.bulkWrite(ops, { ordered: false });
+    res.json({
+      ok: true,
+      upserted: result.upsertedCount ?? 0,
+      modified: result.modifiedCount ?? 0,
+      matched: result.matchedCount ?? 0,
+    });
+  } catch (err) {
+    console.error("Restore failed:", err);
+    res.status(500).json({ error: "Restore failed", message: err.message });
   }
 });
